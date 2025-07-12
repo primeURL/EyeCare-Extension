@@ -1,10 +1,11 @@
 {
     "manifest_version": 3,
-    "name": "CRXJS React Vite Example",
+    "name": "Eye Care Timer",
     "version": "1.0.0",
     "action": { "default_popup": "index.html" },
     "permissions": [
-        "scripting"
+        "scripting",
+        "storage"
     ],
     "host_permissions": [
         "<all_urls>"

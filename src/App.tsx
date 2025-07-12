@@ -1,9 +1,53 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 
+interface TimerState {
+  timeLeft: number
+  isRunning: boolean
+  startTime: number | null
+}
+
 function App() {
   const [timeLeft, setTimeLeft] = useState(10)
   const [isRunning, setIsRunning] = useState(false)
+  const [startTime, setStartTime] = useState<number | null>(null)
+
+  // Load timer state from storage on component mount
+  useEffect(() => {
+    chrome.storage.local.get(['timerState'], (result) => {
+      if (result.timerState) {
+        const { timeLeft, isRunning, startTime: storedStartTime } = result.timerState
+        
+        if (isRunning && storedStartTime) {
+          // Calculate elapsed time since timer started
+          const elapsedSeconds = Math.floor((Date.now() - storedStartTime) / 1000)
+          const newTimeLeft = Math.max(0, timeLeft - elapsedSeconds)
+          
+          if (newTimeLeft > 0) {
+            setTimeLeft(newTimeLeft)
+            setIsRunning(true)
+            setStartTime(storedStartTime)
+          } else {
+            // Timer has completed while popup was closed
+            showNotification()
+            setTimeLeft(10)
+            setIsRunning(false)
+            setStartTime(null)
+            saveTimerState({ timeLeft: 10, isRunning: false, startTime: null })
+          }
+        } else {
+          setTimeLeft(timeLeft)
+          setIsRunning(isRunning)
+          setStartTime(storedStartTime)
+        }
+      }
+    })
+  }, [])
+
+  // Save timer state to storage
+  const saveTimerState = (state: TimerState) => {
+    chrome.storage.local.set({ timerState: state })
+  }
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null
@@ -11,12 +55,19 @@ function App() {
     if (isRunning && timeLeft > 0) {
       interval = setInterval(() => {
         setTimeLeft((prevTime) => {
-          if (prevTime <= 1) {
+          const newTime = prevTime - 1
+          
+          if (newTime <= 0) {
             setIsRunning(false)
+            setStartTime(null)
             showNotification()
+            saveTimerState({ timeLeft: 10, isRunning: false, startTime: null })
             return 0
           }
-          return prevTime - 1
+          
+          // Save current state
+          saveTimerState({ timeLeft: newTime, isRunning: true, startTime })
+          return newTime
         })
       }, 1000)
     }
@@ -24,7 +75,7 @@ function App() {
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [isRunning, timeLeft])
+  }, [isRunning, timeLeft, startTime])
 
   const showNotification = () => {
     // Create notification element
@@ -53,13 +104,18 @@ function App() {
   }
 
   const startTimer = () => {
+    const now = Date.now()
     setTimeLeft(10)
     setIsRunning(true)
+    setStartTime(now)
+    saveTimerState({ timeLeft: 10, isRunning: true, startTime: now })
   }
 
   const stopTimer = () => {
     setIsRunning(false)
-    setTimeLeft(30)
+    setTimeLeft(10)
+    setStartTime(null)
+    saveTimerState({ timeLeft: 10, isRunning: false, startTime: null })
   }
 
   const formatTime = (seconds: number) => {
