@@ -1,73 +1,34 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 
-interface TimerState {
-  timeLeft: number
-  isRunning: boolean
-  startTime: number | null
-}
 
 function App() {
-  const [timeLeft, setTimeLeft] = useState(10)
+  const [remainingTime, setRemainingTime] = useState(40) // 40 seconds
   const [isRunning, setIsRunning] = useState(false)
-  const [startTime, setStartTime] = useState<number | null>(null)
 
-  // Load timer state from storage on component mount
+  // Load timer state from background script on component mount
   useEffect(() => {
-    chrome.storage.local.get(['timerState'], (result) => {
-      if (result.timerState) {
-        const { timeLeft, isRunning, startTime: storedStartTime } = result.timerState
-        
-        if (isRunning && storedStartTime) {
-          // Calculate elapsed time since timer started
-          const elapsedSeconds = Math.floor((Date.now() - storedStartTime) / 1000)
-          const newTimeLeft = Math.max(0, timeLeft - elapsedSeconds)
-          
-          if (newTimeLeft > 0) {
-            setTimeLeft(newTimeLeft)
-            setIsRunning(true)
-            setStartTime(storedStartTime)
-          } else {
-            // Timer has completed while popup was closed
-            showNotification()
-            setTimeLeft(10)
-            setIsRunning(false)
-            setStartTime(null)
-            saveTimerState({ timeLeft: 10, isRunning: false, startTime: null })
-          }
-        } else {
-          setTimeLeft(timeLeft)
-          setIsRunning(isRunning)
-          setStartTime(storedStartTime)
-        }
+    chrome.runtime.sendMessage({ type: 'GET_TIMER_STATE' }, (response) => {
+      if (response?.timerState) {
+        const state = response.timerState
+        setIsRunning(state.isRunning)
+        setRemainingTime(Math.ceil(state.remainingTime / 1000)) // Convert to seconds
       }
     })
   }, [])
 
-  // Save timer state to storage
-  const saveTimerState = (state: TimerState) => {
-    chrome.storage.local.set({ timerState: state })
-  }
-
+  // Update timer display every second when running
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null
 
-    if (isRunning && timeLeft > 0) {
+    if (isRunning) {
       interval = setInterval(() => {
-        setTimeLeft((prevTime) => {
-          const newTime = prevTime - 1
-          
-          if (newTime <= 0) {
-            setIsRunning(false)
-            setStartTime(null)
-            showNotification()
-            saveTimerState({ timeLeft: 10, isRunning: false, startTime: null })
-            return 0
+        chrome.runtime.sendMessage({ type: 'GET_TIMER_STATE' }, (response) => {
+          if (response?.timerState) {
+            const state = response.timerState
+            setIsRunning(state.isRunning)
+            setRemainingTime(Math.ceil(state.remainingTime / 1000))
           }
-          
-          // Save current state
-          saveTimerState({ timeLeft: newTime, isRunning: true, startTime })
-          return newTime
         })
       }, 1000)
     }
@@ -75,47 +36,24 @@ function App() {
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [isRunning, timeLeft, startTime])
-
-  const showNotification = () => {
-    // Create notification element
-    const notification = document.createElement('div')
-    notification.className = 'eye-care-notification'
-    notification.innerHTML = `
-      <div class="notification-content">
-        <div class="notification-icon">👁️</div>
-        <div class="notification-text">
-          <h3>Time to Blink!</h3>
-          <p>Take a 30-second break and blink naturally</p>
-        </div>
-        <button class="notification-close" onclick="this.parentElement.parentElement.remove()">×</button>
-      </div>
-    `
-    
-    // Add to body
-    document.body.appendChild(notification)
-    
-    // Auto remove after 10 seconds
-    setTimeout(() => {
-      if (notification.parentElement) {
-        notification.remove()
-      }
-    }, 10000)
-  }
+  }, [isRunning])
 
   const startTimer = () => {
-    const now = Date.now()
-    setTimeLeft(10)
-    setIsRunning(true)
-    setStartTime(now)
-    saveTimerState({ timeLeft: 10, isRunning: true, startTime: now })
+    chrome.runtime.sendMessage({ type: 'START_TIMER' }, (response) => {
+      if (response?.success) {
+        setIsRunning(true)
+        setRemainingTime(40) // Reset to 40 seconds
+      }
+    })
   }
 
   const stopTimer = () => {
-    setIsRunning(false)
-    setTimeLeft(10)
-    setStartTime(null)
-    saveTimerState({ timeLeft: 10, isRunning: false, startTime: null })
+    chrome.runtime.sendMessage({ type: 'STOP_TIMER' }, (response) => {
+      if (response?.success) {
+        setIsRunning(false)
+        setRemainingTime(40) // Reset to 40 seconds
+      }
+    })
   }
 
   const formatTime = (seconds: number) => {
@@ -130,7 +68,7 @@ function App() {
       
       <div className="timer-section">
         <div className="timer-display">
-          <span className="time">{formatTime(timeLeft)}</span>
+          <span className="time">{formatTime(remainingTime)}</span>
         </div>
         
         <div className="controls">
@@ -146,7 +84,7 @@ function App() {
         </div>
         
         <p className="instruction">
-          Timer will run in background. You'll get a notification when it's time to blink!
+          Timer runs for 40 seconds in background. You'll get a notification when it's time to blink!
         </p>
         
         {isRunning && (

@@ -2,7 +2,7 @@
 
 const content = () => {
   return (
-    <div>content</div>
+    <div style={{color:'red'}}>content</div>
   )
 }
 
